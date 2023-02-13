@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import asyncio
-from typing import Any, Dict, List
 import httpx
 import requests
 
@@ -25,14 +24,14 @@ class InstantUsernameTool(Tool):
         super().__init__()
 
     @staticmethod
-    def get_config() -> Dict[str, Any]:
+    def get_config() -> dict[str]:
         """Function which return tool configuration as a dictionnary."""
         return {
             'active': True,
         }
 
     @staticmethod
-    def get_lst_input_data_types() -> Dict[str, bool]:
+    def get_lst_input_data_types() -> dict[str, bool]:
         """
         Function which return the list of data types which can be use to run this Tool.
         It's will help to make decision to run Tool depending on current data.
@@ -42,7 +41,7 @@ class InstantUsernameTool(Tool):
         }
 
     @staticmethod
-    def get_lst_output_data_types() -> List[str]:
+    def get_lst_output_data_types() -> list[str]:
         """
         Function which return the list of data types which can be receive by using this Tool.
         It's will help to make decision to complete profile to get more information.
@@ -55,47 +54,53 @@ class InstantUsernameTool(Tool):
 
         usernames = self.get_default_profile().get_lst_usernames()
 
-        services: List[dict] = self.get_services()
+        services: list[dict] = self.get_services()
 
-        # Create a profile for each InstantUsername account found
-        # because each account might be a different person
-        for username in usernames:
-            accounts: list = []
-            accounts = asyncio.run(self.get_account_callback(services, username, accounts))
+        # If we can get the list of services
+        if services is not None:
 
-            for account in accounts:
+            # Create a profile for each InstantUsername account found
+            # because each account might be a different person
+            for username in usernames:
+                accounts: list = []
+                accounts = asyncio.run(self.get_account_callback(services, username, accounts))
 
-                if account is None or account.get('available'):
-                    print_debug("No account found on " + account.get('service') + " for " + username + ".")
+                for account in accounts:
 
-                else:
-                    service_name = account.get('service')
-                    print_debug("Account found on " + service_name + " for " + username + ".")
-                    url = account.get('url')
+                    if account is None or not account.get('available') or account.get('error'):
+                        print_debug("No account found on " + account.get('service') + " for " + username + ".")
 
-                    account = WebsiteAccount(
-                        username=username,
-                        website_name=service_name,
-                        website_url=url
-                    )
+                    else:
+                        service_name = account.get('service')
+                        print_debug("Account found on " + service_name + " for " + username + ".")
+                        url = account.get('url')
 
-                    profile: Profile = self.get_default_profile().clone()
-                    profile.set_lst_accounts([account])
-                    self.append_profile(profile)
+                        account = WebsiteAccount(
+                            username=username,
+                            website_name=service_name,
+                            website_url=url
+                        )
+
+                        profile: Profile = self.get_default_profile().clone()
+                        profile.set_lst_accounts([account])
+                        self.append_profile(profile)
+        
+        else:
+            print_error("[InstantUsernameTool:execute] Request failed.", True)
 
     def get_services(self) -> list:
         """
         Function to list services to check for username. It uses Instant Username Search API.
         """
 
-        url = "https://api.instantusername.com/services"
+        url = "https://api.instantusername.com/services.json"
 
         try:
             r = requests.get(url=url)
             res_json = r.json()
             print_debug("InstantUsername request succeed with a " + str(r.status_code) + " status code.")
         except Exception as e:
-            print_error("[InstantUsernameTool:get_services] Request failed: " + str(e)[:100], True)
+            print_error("[InstantUsernameTool:get_services] Request failed: " + str(e), True)
             return None
 
         return res_json
@@ -120,7 +125,7 @@ class InstantUsernameTool(Tool):
             res_json = r.json()
             print_debug("InstantUsername:" + service_name + " request succeed with a " + str(r.status_code) + " status code.")
         except Exception as e:
-            print_error("[InstantUsernameTool:request_service] Request to " + service_name + " failed: " + str(e)[:100], True)
+            print_error("[InstantUsernameTool:request_service] Request to " + service_name + " failed. " + str(e), True)
             return {
                 "service": service_name,
                 "endpoint": endpoint,
@@ -130,7 +135,7 @@ class InstantUsernameTool(Tool):
 
         return res_json
 
-    async def get_account_callback(self, lst_services: List[dict], username: str, lst_accounts: list) -> list:
+    async def get_account_callback(self, lst_services: list[dict], username: str, lst_accounts: list) -> list:
         """ """
         async with httpx.AsyncClient() as client:
             lst_accounts = await asyncio.gather(*[self.request_service(client, service, username) for service in lst_services])
